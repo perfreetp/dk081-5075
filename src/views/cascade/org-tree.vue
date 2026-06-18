@@ -37,11 +37,11 @@
         <div class="tree-wrapper">
           <el-tree
             ref="treeRef"
-            :data="orgData"
+            :data="filteredOrgData"
             :props="{ label: 'label', children: 'children' }"
             :filter-node-method="filterNode"
             node-key="id"
-            default-expand-all
+            :default-expanded-keys="defaultExpandedKeys"
             :expand-on-click-node="false"
             @node-click="handleNodeClick"
             class="custom-tree"
@@ -258,6 +258,52 @@ watch(filterText, (val) => {
   treeRef.value?.filter(val)
 })
 
+const filteredOrgData = computed(() => {
+  const orgs = store.currentUserPerms.orgs
+  if (!orgs || orgs.length === 0) return orgData
+
+  const filterTree = (nodes) => {
+    const result = []
+    for (const node of nodes) {
+      if (orgs.includes(node.id)) {
+        result.push(node)
+        continue
+      }
+      if (node.children) {
+        const filteredChildren = filterTree(node.children)
+        if (filteredChildren.length > 0) {
+          result.push({ ...node, children: filteredChildren })
+        }
+      }
+    }
+    return result
+  }
+  return filterTree(orgData)
+})
+
+const defaultExpandedKeys = computed(() => {
+  const orgs = store.currentUserPerms.orgs
+  if (!orgs || orgs.length === 0) return ['1', '2']
+  const keys = new Set()
+  const collectParents = (nodes, targetId, path = []) => {
+    for (const node of nodes) {
+      if (node.id === targetId) {
+        path.forEach(id => keys.add(id))
+        return true
+      }
+      if (node.children) {
+        if (collectParents(node.children, targetId, [...path, node.id])) {
+          return true
+        }
+      }
+    }
+    return false
+  }
+  orgs.forEach(id => collectParents(orgData, id))
+  orgs.forEach(id => keys.add(id))
+  return Array.from(keys)
+})
+
 const flatOrgList = computed(() => {
   const result = []
   const flatten = (nodes) => {
@@ -266,7 +312,7 @@ const flatOrgList = computed(() => {
       if (node.children) flatten(node.children)
     })
   }
-  flatten(orgData)
+  flatten(filteredOrgData.value)
   return result
 })
 
@@ -321,7 +367,7 @@ const findParent = (nodes, targetId, parent = null) => {
 
 const handleNodeClick = (data) => {
   currentNode.value = data
-  parentNode.value = findParent(orgData, data.id)
+  parentNode.value = findParent(filteredOrgData.value, data.id)
 }
 
 const handleExpandAll = () => {
@@ -331,7 +377,7 @@ const handleExpandAll = () => {
       if (node.children) expandAll(node.children)
     })
   }
-  expandAll(orgData)
+  expandAll(filteredOrgData.value)
 }
 
 const handleCollapseAll = () => {
@@ -341,7 +387,7 @@ const handleCollapseAll = () => {
       if (node.children) collapseAll(node.children)
     })
   }
-  collapseAll(orgData)
+  collapseAll(filteredOrgData.value)
 }
 
 const handleViewDevice = (row) => {

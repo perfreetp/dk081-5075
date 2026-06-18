@@ -151,7 +151,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import L from 'leaflet'
@@ -163,6 +163,7 @@ const router = useRouter()
 const chartRef = ref(null)
 let map = null
 let chartInstance = null
+let mapMarkers = []
 
 const onlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'online').length)
 const offlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'offline').length)
@@ -181,15 +182,21 @@ const getVideoThumb = (item) => {
 }
 
 const initMap = () => {
-  if (map) return
-  map = L.map('dashboardMap', {
-    zoomControl: true,
-    attributionControl: false
-  }).setView([39.9100, 116.4050], 12)
-  
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18
-  }).addTo(map)
+  if (!map) {
+    map = L.map('dashboardMap', {
+      zoomControl: true,
+      attributionControl: false
+    }).setView([39.9100, 116.4050], 12)
+    
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18
+    }).addTo(map)
+  }
+
+  mapMarkers.forEach(m => {
+    try { map.removeLayer(m) } catch (e) {}
+  })
+  mapMarkers = []
   
   store.visibleDevices.forEach(device => {
     const iconColor = device.status === 'online' ? '#52c41a' : device.status === 'offline' ? '#f5222d' : '#faad14'
@@ -209,10 +216,15 @@ const initMap = () => {
         所属：${device.org}
       </div>
     `)
+    mapMarkers.push(marker)
   })
 }
 
 const destroyMap = () => {
+  mapMarkers.forEach(m => {
+    try { map?.removeLayer(m) } catch (e) {}
+  })
+  mapMarkers = []
   if (map) {
     try { map.remove() } catch (e) {}
     map = null
@@ -301,6 +313,12 @@ const handleResize = () => {
     map.invalidateSize()
   }
 }
+
+watch(() => store.visibleDevices, () => {
+  if (map) {
+    nextTick(() => initMap())
+  }
+}, { deep: true })
 
 onMounted(() => {
   nextTick(() => {

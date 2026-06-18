@@ -307,7 +307,7 @@ const formRules = {
 }
 
 const filteredData = computed(() => {
-  return store.devices.filter(item => {
+  return store.visibleDevices.filter(item => {
     if (filterForm.name && !item.name.includes(filterForm.name)) return false
     if (filterForm.org && !item.org.includes(filterForm.org)) return false
     if (filterForm.status && item.status !== filterForm.status) return false
@@ -317,9 +317,9 @@ const filteredData = computed(() => {
 })
 
 const total = computed(() => filteredData.value.length)
-const onlineCount = computed(() => store.devices.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => store.devices.filter(d => d.status === 'offline').length)
-const warningCount = computed(() => store.devices.filter(d => d.status === 'warning').length)
+const onlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'online').length)
+const offlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'offline').length)
+const warningCount = computed(() => store.visibleDevices.filter(d => d.status === 'warning').length)
 
 const tableData = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
