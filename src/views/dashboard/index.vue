@@ -151,26 +151,28 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
 import L from 'leaflet'
-import { deviceList, alarmList, orgData } from '@/mock/data'
+import { orgData } from '@/mock/data'
+import { useAppStore } from '@/stores'
 
+const store = useAppStore()
 const router = useRouter()
 const chartRef = ref(null)
 let map = null
 let chartInstance = null
 
-const onlineCount = computed(() => deviceList.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => deviceList.filter(d => d.status === 'offline').length)
-const warningCount = computed(() => deviceList.filter(d => d.status === 'warning').length)
-const pendingAlarmCount = computed(() => alarmList.filter(a => a.status === 'pending').length)
-const resolvedCount = computed(() => alarmList.filter(a => a.status === 'resolved').length)
-const onDutyCount = ref(12)
+const onlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'online').length)
+const offlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'offline').length)
+const warningCount = computed(() => store.visibleDevices.filter(d => d.status === 'warning').length)
+const pendingAlarmCount = computed(() => store.pendingAlarmCount)
+const resolvedCount = computed(() => store.alarms.filter(a => a.status === 'resolved').length)
+const onDutyCount = computed(() => store.users.filter(u => u.status === 'on').length)
 
-const recentAlarms = computed(() => alarmList.slice(0, 5))
-const featuredVideos = computed(() => deviceList.filter(d => d.status === 'online').slice(0, 4))
+const recentAlarms = computed(() => store.alarms.slice(0, 5))
+const featuredVideos = computed(() => store.visibleDevices.filter(d => d.status === 'online').slice(0, 4))
 
 const getVideoThumb = (item) => {
   const colors = ['#1890ff', '#52c41a', '#faad14', '#f5222d']
@@ -179,6 +181,7 @@ const getVideoThumb = (item) => {
 }
 
 const initMap = () => {
+  if (map) return
   map = L.map('dashboardMap', {
     zoomControl: true,
     attributionControl: false
@@ -188,7 +191,7 @@ const initMap = () => {
     maxZoom: 18
   }).addTo(map)
   
-  deviceList.forEach(device => {
+  store.visibleDevices.forEach(device => {
     const iconColor = device.status === 'online' ? '#52c41a' : device.status === 'offline' ? '#f5222d' : '#faad14'
     const icon = L.divIcon({
       className: 'custom-marker',
@@ -207,6 +210,13 @@ const initMap = () => {
       </div>
     `)
   })
+}
+
+const destroyMap = () => {
+  if (map) {
+    try { map.remove() } catch (e) {}
+    map = null
+  }
 }
 
 const initChart = () => {
@@ -271,6 +281,7 @@ const handleNodeClick = (data) => {
 }
 
 const playVideo = (item) => {
+  store.addToWall(item)
   router.push('/event/video-wall')
 }
 
@@ -297,6 +308,15 @@ onMounted(() => {
     initChart()
     window.addEventListener('resize', handleResize)
   })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  destroyMap()
+  if (chartInstance) {
+    chartInstance.dispose()
+    chartInstance = null
+  }
 })
 </script>
 

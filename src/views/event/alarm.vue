@@ -190,15 +190,28 @@
         </el-descriptions>
         
         <div class="detail-video">
-          <h4>关联视频</h4>
+          <h4>关联视频与设备</h4>
           <div class="video-preview">
             <img :src="getVideoThumb()" alt="" />
             <div class="video-info">
               <span>{{ currentAlarm.device }}</span>
-              <el-button type="primary" size="small" @click="handleViewVideo">
-                <el-icon><VideoPlay /></el-icon>查看视频
-              </el-button>
+              <span class="video-device-info" v-if="currentAlarmDevice">
+                <span class="status-dot" :class="currentAlarmDevice.status"></span>
+                {{ currentAlarmDevice.status === 'online' ? '在线' : currentAlarmDevice.status === 'offline' ? '离线' : '异常' }}
+                · {{ currentAlarmDevice.org }}
+              </span>
             </div>
+          </div>
+          <div class="video-actions">
+            <el-button type="primary" size="small" @click="handleViewVideo">
+              <el-icon><VideoPlay /></el-icon>实时预览
+            </el-button>
+            <el-button type="warning" size="small" @click="handlePlayback">
+              <el-icon><Clock /></el-icon>历史回放
+            </el-button>
+            <el-button type="success" size="small" @click="handleLocateOnMap">
+              <el-icon><Location /></el-icon>查看位置
+            </el-button>
           </div>
         </div>
         
@@ -275,7 +288,11 @@
 <script setup>
 import { ref, reactive, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { alarmList, userList } from '@/mock/data'
+import { useRouter } from 'vue-router'
+import { useAppStore } from '@/stores'
+
+const store = useAppStore()
+const router = useRouter()
 
 const searchText = ref('')
 const filterLevel = ref('')
@@ -307,15 +324,20 @@ const processRecords = [
   { id: 3, user: '李明', action: '开始处理', time: '2024-01-15 14:30:15', type: 'primary', comment: '已通知消防部门' }
 ]
 
-const highCount = computed(() => alarmList.filter(a => a.level === 'high').length)
-const mediumCount = computed(() => alarmList.filter(a => a.level === 'medium').length)
-const lowCount = computed(() => alarmList.filter(a => a.level === 'low').length)
-const pendingCount = computed(() => alarmList.filter(a => a.status === 'pending').length)
-const processingCount = computed(() => alarmList.filter(a => a.status === 'processing').length)
-const resolvedCount = computed(() => alarmList.filter(a => a.status === 'resolved').length)
+const highCount = computed(() => store.alarms.filter(a => a.level === 'high').length)
+const mediumCount = computed(() => store.alarms.filter(a => a.level === 'medium').length)
+const lowCount = computed(() => store.alarms.filter(a => a.level === 'low').length)
+const pendingCount = computed(() => store.pendingAlarmCount)
+const processingCount = computed(() => store.alarms.filter(a => a.status === 'processing').length)
+const resolvedCount = computed(() => store.alarms.filter(a => a.status === 'resolved').length)
+
+const currentAlarmDevice = computed(() => {
+  if (!currentAlarm.value) return null
+  return store.visibleDevices.find(d => d.name === currentAlarm.value.device) || null
+})
 
 const filteredData = computed(() => {
-  return alarmList.filter(item => {
+  return store.alarms.filter(item => {
     if (searchText.value && !item.description.includes(searchText.value) && !item.device.includes(searchText.value)) {
       return false
     }
@@ -363,11 +385,48 @@ const handleProcess = (row) => {
 }
 
 const handleVideo = (row) => {
-  ElMessage.info('跳转到视频页面')
+  const device = store.visibleDevices.find(d => d.name === row.device)
+  if (device) {
+    store.addToWall(device)
+    ElMessage.success(`已将 ${device.name} 推送到视频墙`)
+    router.push('/event/video-wall')
+  } else {
+    ElMessage.warning('未找到关联设备')
+  }
 }
 
 const handleViewVideo = () => {
-  ElMessage.info('查看关联视频')
+  const device = currentAlarmDevice.value
+  if (device) {
+    store.addToWall(device)
+    ElMessage.success(`已将 ${device.name} 推送到视频墙`)
+    showDetailDialog.value = false
+    router.push('/event/video-wall')
+  } else {
+    ElMessage.warning('未找到关联设备')
+  }
+}
+
+const handlePlayback = () => {
+  const device = currentAlarmDevice.value
+  if (device) {
+    store.setPlaybackDevice(device)
+    showDetailDialog.value = false
+    router.push('/event/playback')
+  } else {
+    ElMessage.warning('未找到关联设备')
+  }
+}
+
+const handleLocateOnMap = () => {
+  const device = currentAlarmDevice.value
+  if (device) {
+    showDetailDialog.value = false
+    router.push('/cascade/map')
+    ElMessage.success(`已定位到 ${device.name}，请在地图中查看`)
+  } else {
+    ElMessage.warning('未找到关联设备位置')
+  }
 }
 
 const handleAssignSubmit = () => {
@@ -376,10 +435,9 @@ const handleAssignSubmit = () => {
     return
   }
   if (currentAlarm.value) {
-    currentAlarm.value.handler = assignForm.handler
-    currentAlarm.value.status = 'processing'
+    store.assignAlarm(currentAlarm.value.id, assignForm.handler)
+    ElMessage.success(`已分派给 ${assignForm.handler}，当前待办告警 ${store.pendingAlarmCount} 条`)
   }
-  ElMessage.success('分派成功')
   showAssignDialog.value = false
 }
 
@@ -389,9 +447,9 @@ const handleProcessSubmit = () => {
     return
   }
   if (currentAlarm.value) {
-    currentAlarm.value.status = processForm.status
+    store.updateAlarmStatus(currentAlarm.value.id, processForm.status)
+    ElMessage.success(`处理提交成功，当前待办告警 ${store.pendingAlarmCount} 条`)
   }
-  ElMessage.success('提交成功')
   showProcessDialog.value = false
 }
 
@@ -557,10 +615,44 @@ const handleExport = () => {
   padding: 10px 15px;
   background: linear-gradient(transparent, rgba(0,0,0,0.7));
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 4px;
   color: #fff;
   font-size: 13px;
+}
+
+.video-device-info {
+  font-size: 11px;
+  opacity: 0.85;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.video-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 2px;
+
+  &.online {
+    background: #52c41a;
+    box-shadow: 0 0 4px #52c41a;
+  }
+  &.offline {
+    background: #f5222d;
+  }
+  &.warning {
+    background: #faad14;
+  }
 }
 
 .detail-timeline {

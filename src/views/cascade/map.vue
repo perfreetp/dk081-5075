@@ -15,7 +15,7 @@
         </el-button>
       </div>
     </div>
-    
+
     <div class="map-layout">
       <div class="map-sidebar">
         <el-card class="side-card">
@@ -32,7 +32,7 @@
             </div>
           </div>
         </el-card>
-        
+
         <el-card class="side-card">
           <template #header>
             <span class="card-title">组织筛选</span>
@@ -43,6 +43,7 @@
             size="small"
             clearable
             class="search-input"
+            @clear="handleSearchClear"
           >
             <template #prefix>
               <el-icon><Search /></el-icon>
@@ -50,16 +51,20 @@
           </el-input>
           <el-tree
             ref="treeRef"
-            :data="orgData"
+            :data="filteredOrgData"
             :props="{ label: 'label', children: 'children' }"
             default-expand-all
             show-checkbox
             node-key="id"
+            :default-checked-keys="selectedOrgIds"
             @check="handleOrgCheck"
             class="org-tree"
           />
+          <el-button v-if="selectedOrgIds.length > 0" size="small" plain type="danger" style="margin-top: 8px; width: 100%;" @click="clearOrgFilter">
+            <el-icon><CircleClose /></el-icon>清空组织筛选
+          </el-button>
         </el-card>
-        
+
         <el-card class="side-card device-list-card">
           <template #header>
             <div class="card-header">
@@ -68,8 +73,8 @@
             </div>
           </template>
           <div class="device-list">
-            <div 
-              v-for="device in filteredDevices.slice(0, 10)" 
+            <div
+              v-for="device in filteredDevices.slice(0, 20)"
               :key="device.id"
               class="device-item"
               :class="{ active: selectedDevice?.id === device.id }"
@@ -86,13 +91,14 @@
                 <span class="status-dot" :class="device.status"></span>
               </div>
             </div>
+            <el-empty v-if="filteredDevices.length === 0" description="暂无符合条件的设备" :image-size="60" />
           </div>
         </el-card>
       </div>
-      
+
       <div class="map-main">
-        <div id="mapView" class="map-container"></div>
-        
+        <div ref="mapRef" id="mapView" class="map-container"></div>
+
         <div class="map-legend">
           <div class="legend-title">图例</div>
           <div class="legend-item">
@@ -112,11 +118,11 @@
             <span>告警点</span>
           </div>
         </div>
-        
+
         <div class="map-stats">
           <div class="stat-item">
             <span class="stat-label">设备总数</span>
-            <span class="stat-value">{{ deviceData.length }}</span>
+            <span class="stat-value">{{ store.visibleDevices.length }}</span>
           </div>
           <div class="stat-item online">
             <span class="stat-label">在线</span>
@@ -132,21 +138,21 @@
           </div>
         </div>
       </div>
-      
+
       <div v-if="selectedDevice" class="device-detail-panel">
         <div class="panel-header">
           <span class="panel-title">设备详情</span>
           <el-icon class="close-btn" @click="selectedDevice = null"><Close /></el-icon>
         </div>
         <div class="panel-body">
-          <div class="detail-video">
+          <div class="detail-video" @click="handlePreview">
             <img :src="getVideoThumb(selectedDevice)" alt="" />
-            <div class="play-overlay" @click="handlePlay">
+            <div class="play-overlay">
               <el-icon><VideoPlay /></el-icon>
-              <span>点击播放</span>
+              <span>点击预览</span>
             </div>
           </div>
-          
+
           <div class="detail-info">
             <h4>{{ selectedDevice.name }}</h4>
             <div class="info-list">
@@ -184,13 +190,16 @@
               </div>
             </div>
           </div>
-          
+
           <div class="detail-actions">
-            <el-button type="primary" style="flex: 1;" @click="handleAddToWall">
-              <el-icon><Monitor /></el-icon>视频上墙
+            <el-button type="primary" style="flex: 1;" @click="handlePreview">
+              <el-icon><VideoPlay /></el-icon>预览
+            </el-button>
+            <el-button type="success" style="flex: 1;" @click="handleAddToWall">
+              <el-icon><Monitor /></el-icon>上墙
             </el-button>
             <el-button type="warning" style="flex: 1;" @click="handlePlayback">
-              <el-icon><Clock /></el-icon>历史回放
+              <el-icon><Clock /></el-icon>回放
             </el-button>
           </div>
         </div>
@@ -200,31 +209,27 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
-import { orgData, deviceList as mockDeviceList } from '@/mock/data'
+import { orgData } from '@/mock/data'
+import { useAppStore } from '@/stores'
+
+const store = useAppStore()
+const router = useRouter()
 
 const mapType = ref('standard')
 const searchText = ref('')
 const selectedDevice = ref(null)
 const treeRef = ref(null)
+const mapRef = ref(null)
 const selectedOrgIds = ref([])
 let map = null
 let markers = []
+let tileLayer = null
 
-const deviceData = ref([])
-
-onMounted(() => {
-  deviceData.value = JSON.parse(JSON.stringify(mockDeviceList))
-  nextTick(() => {
-    initMap()
-    
-    setTimeout(() => {
-      map?.invalidateSize()
-    }, 100)
-  })
-})
+const filteredOrgData = computed(() => orgData)
 
 const layers = reactive([
   { key: 'all', name: '全部设备', color: '#1890ff', visible: true },
@@ -233,20 +238,19 @@ const layers = reactive([
   { key: 'warning', name: '异常设备', color: '#faad14', visible: true }
 ])
 
-const onlineCount = computed(() => deviceData.value.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => deviceData.value.filter(d => d.status === 'offline').length)
-const warningCount = computed(() => deviceData.value.filter(d => d.status === 'warning').length)
+const onlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'online').length)
+const offlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'offline').length)
+const warningCount = computed(() => store.visibleDevices.filter(d => d.status === 'warning').length)
 
-const getOrgLabels = () => {
+const getOrgLabels = (ids) => {
+  if (ids.length === 0) return []
   const labels = []
   const traverse = (nodes) => {
     for (const node of nodes) {
-      if (selectedOrgIds.value.includes(node.id)) {
+      if (ids.includes(node.id)) {
         labels.push(node.label.replace('综治中心', ''))
       }
-      if (node.children) {
-        traverse(node.children)
-      }
+      if (node.children) traverse(node.children)
     }
   }
   traverse(orgData)
@@ -254,46 +258,37 @@ const getOrgLabels = () => {
 }
 
 const filteredDevices = computed(() => {
-  let result = [...deviceData.value]
+  let result = [...store.visibleDevices]
 
   if (selectedOrgIds.value.length > 0) {
-    const orgLabels = getOrgLabels()
-    result = result.filter(d => {
-      return orgLabels.some(label => d.org.includes(label))
-    })
+    const orgLabels = getOrgLabels(selectedOrgIds.value)
+    result = result.filter(d => orgLabels.some(label => d.org.includes(label)))
   }
 
-  if (searchText.value) {
-    result = result.filter(d => 
-      d.name.includes(searchText.value) || d.org.includes(searchText.value)
+  const kw = searchText.value.trim()
+  if (kw) {
+    result = result.filter(d =>
+      d.name.includes(kw) || d.org.includes(kw) || d.id.includes(kw)
     )
   }
 
   const allVisible = layers.find(l => l.key === 'all')?.visible
-  const onlineVisible = layers.find(l => l.key === 'online')?.visible
-  const offlineVisible = layers.find(l => l.key === 'offline')?.visible
-  const warningVisible = layers.find(l => l.key === 'warning')?.visible
-
   if (!allVisible) {
-    const allowedStatuses = []
-    if (onlineVisible) allowedStatuses.push('online')
-    if (offlineVisible) allowedStatuses.push('offline')
-    if (warningVisible) allowedStatuses.push('warning')
-    if (allowedStatuses.length === 0) {
-      result = []
-    } else {
-      result = result.filter(d => allowedStatuses.includes(d.status))
-    }
+    const statuses = []
+    if (layers.find(l => l.key === 'online')?.visible) statuses.push('online')
+    if (layers.find(l => l.key === 'offline')?.visible) statuses.push('offline')
+    if (layers.find(l => l.key === 'warning')?.visible) statuses.push('warning')
+    result = statuses.length > 0 ? result.filter(d => statuses.includes(d.status)) : []
   }
 
   return result
 })
 
 const visibleDeviceCount = computed(() => ({
-  all: deviceData.value.length,
-  online: deviceData.value.filter(d => d.status === 'online').length,
-  offline: deviceData.value.filter(d => d.status === 'offline').length,
-  warning: deviceData.value.filter(d => d.status === 'warning').length
+  all: store.visibleDevices.length,
+  online: store.visibleDevices.filter(d => d.status === 'online').length,
+  offline: store.visibleDevices.filter(d => d.status === 'offline').length,
+  warning: store.visibleDevices.filter(d => d.status === 'warning').length
 }))
 
 const getVideoThumb = (item) => {
@@ -301,50 +296,64 @@ const getVideoThumb = (item) => {
 }
 
 const initMap = () => {
+  if (map) return
+  if (!mapRef.value || !document.getElementById('mapView')) return
+
   map = L.map('mapView', {
     zoomControl: false,
     attributionControl: false
   }).setView([39.9100, 116.4050], 12)
-  
+
   L.control.zoom({ position: 'bottomright' }).addTo(map)
-  
   updateTileLayer()
   addDeviceMarkers()
+
+  setTimeout(() => {
+    map && map.invalidateSize()
+  }, 150)
+}
+
+const destroyMap = () => {
+  if (map) {
+    markers.forEach(m => { try { map.removeLayer(m) } catch (e) {} })
+    markers = []
+    try {
+      map.remove()
+    } catch (e) {}
+    map = null
+    tileLayer = null
+  }
 }
 
 const updateTileLayer = () => {
   if (!map) return
-  
-  map.eachLayer((layer) => {
-    if (layer instanceof L.TileLayer) {
-      map.removeLayer(layer)
-    }
-  })
-  
+
+  if (tileLayer) {
+    try { map.removeLayer(tileLayer) } catch (e) {}
+    tileLayer = null
+  }
+
   let tileUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
   if (mapType.value === 'satellite') {
     tileUrl = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
   }
-  
-  L.tileLayer(tileUrl, {
-    maxZoom: 18
-  }).addTo(map)
+
+  tileLayer = L.tileLayer(tileUrl, { maxZoom: 18 }).addTo(map)
 }
 
 const addDeviceMarkers = () => {
   if (!map) return
-  
-  markers.forEach(m => map.removeLayer(m))
+
+  markers.forEach(m => { try { map.removeLayer(m) } catch (e) {} })
   markers = []
-  
+
   filteredDevices.value.forEach(device => {
     const iconColor = device.status === 'online' ? '#52c41a' : device.status === 'offline' ? '#f5222d' : '#faad14'
     const icon = L.divIcon({
       className: 'device-marker',
       html: `
         <div style="
-          width: 20px;
-          height: 20px;
+          width: 20px; height: 20px;
           background: ${iconColor};
           border-radius: 50%;
           border: 3px solid white;
@@ -361,7 +370,7 @@ const addDeviceMarkers = () => {
       iconSize: [20, 20],
       iconAnchor: [10, 10]
     })
-    
+
     const marker = L.marker([device.lat, device.lng], { icon }).addTo(map)
     marker.bindPopup(`
       <div style="min-width: 160px; color: #333;">
@@ -380,47 +389,60 @@ const addDeviceMarkers = () => {
 
 const toggleLayer = (layer) => {
   if (layer.key === 'all') {
-    layers.forEach(l => {
-      l.visible = layer.visible
-    })
+    layers.forEach(l => { l.visible = layer.visible })
   } else {
     const allLayer = layers.find(l => l.key === 'all')
-    if (allLayer && !layer.visible) {
-      allLayer.visible = false
+    if (allLayer) {
+      const othersOn = layers.filter(l => l.key !== 'all' && l.key !== layer.key).some(l => l.visible)
+      if (!layer.visible && othersOn) {
+        allLayer.visible = false
+      } else if (layer.visible && !othersOn) {
+        allLayer.visible = true
+      } else if (!layer.visible) {
+        allLayer.visible = true
+      } else {
+        allLayer.visible = false
+      }
     }
   }
-  
-  if (map) {
-    addDeviceMarkers()
-  }
-  
-  ElMessage.info(`${layer.name}：${layer.visible ? '显示' : '隐藏'}，当前地图和列表已同步更新`)
+  ElMessage.info(`${layer.name}：${layer.visible ? '显示' : '隐藏'}`)
 }
 
 const handleOrgCheck = (_, info) => {
   selectedOrgIds.value = info.checkedKeys.filter(k => typeof k === 'string')
-  
-  if (map) {
-    addDeviceMarkers()
-  }
-  
   if (selectedOrgIds.value.length > 0) {
-    ElMessage.info(`已筛选 ${selectedOrgIds.value.length} 个组织，地图和列表已同步更新`)
+    ElMessage.info(`已筛选 ${selectedOrgIds.value.length} 个组织`)
   } else {
-    ElMessage.info('已清除组织筛选，显示全部设备')
+    ElMessage.info('已清除组织筛选')
   }
+}
+
+const clearOrgFilter = () => {
+  selectedOrgIds.value = []
+  nextTick(() => {
+    treeRef.value?.setCheckedKeys([])
+  })
+  ElMessage.info('已清空组织筛选')
+}
+
+const handleSearchClear = () => {
+  searchText.value = ''
 }
 
 const selectDevice = (device) => {
   selectedDevice.value = device
   if (map) {
-    map.flyTo([device.lat, device.lng], 15, { duration: 0.5 })
+    try {
+      map.flyTo([device.lat, device.lng], 15, { duration: 0.5 })
+    } catch (e) {}
   }
 }
 
 const handleLocate = () => {
   if (map) {
-    map.flyTo([39.9100, 116.4050], 12)
+    try {
+      map.flyTo([39.9100, 116.4050], 12)
+    } catch (e) {}
   }
   ElMessage.success('已定位到市中心')
 }
@@ -431,36 +453,60 @@ const handleFullScreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen()
     } else {
-      mapEl.requestFullscreen()
+      mapEl.requestFullscreen().then(() => {
+        setTimeout(() => map && map.invalidateSize(), 200)
+      })
     }
   }
 }
 
-const handlePlay = () => {
-  ElMessage.success('开始播放视频')
+const handlePreview = () => {
+  if (!selectedDevice.value) return
+  store.setPreviewDevice(selectedDevice.value)
+  ElMessage.success(`已打开 ${selectedDevice.value.name} 视频预览`)
 }
 
 const handleAddToWall = () => {
-  ElMessage.success('已推送到视频墙')
+  if (!selectedDevice.value) return
+  store.addToWall(selectedDevice.value)
+  ElMessage.success(`已将 ${selectedDevice.value.name} 推送到视频墙，共 ${store.wallDevices.length} 路`)
 }
 
 const handlePlayback = () => {
-  ElMessage.info('跳转到历史回放')
+  if (!selectedDevice.value) return
+  store.setPlaybackDevice(selectedDevice.value)
+  router.push('/event/playback')
 }
 
 watch(mapType, () => {
   updateTileLayer()
 })
 
+watch(filteredDevices, () => {
+  nextTick(() => addDeviceMarkers())
+}, { deep: true })
+
+watch(() => store.visibleDevices, () => {
+  nextTick(() => addDeviceMarkers())
+}, { deep: true })
+
 onMounted(() => {
   nextTick(() => {
     initMap()
-    
-    setTimeout(() => {
-      map?.invalidateSize()
-    }, 100)
   })
+  window.addEventListener('resize', handleResize)
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  destroyMap()
+})
+
+const handleResize = () => {
+  setTimeout(() => {
+    map && map.invalidateSize()
+  }, 100)
+}
 </script>
 
 <style lang="scss" scoped>
@@ -491,7 +537,7 @@ onMounted(() => {
 .card-title {
   font-size: 14px;
   font-weight: 600;
-  
+
   &::before {
     content: '';
     display: inline-block;
@@ -517,7 +563,7 @@ onMounted(() => {
   padding: 6px 8px;
   background: rgba(24, 144, 255, 0.03);
   border-radius: 4px;
-  
+
   :deep(.el-checkbox__label) {
     display: flex;
     align-items: center;
@@ -553,7 +599,7 @@ onMounted(() => {
 .device-list-card {
   flex: 1;
   min-height: 0;
-  
+
   :deep(.el-card__body) {
     height: calc(100% - 57px);
     overflow-y: auto;
@@ -590,11 +636,11 @@ onMounted(() => {
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
-  
+
   &:hover {
     background: rgba(24, 144, 255, 0.08);
   }
-  
+
   &.active {
     background: rgba(24, 144, 255, 0.15);
   }
@@ -608,7 +654,7 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  
+
   &.online {
     background: rgba(82, 196, 26, 0.15);
     color: $success-color;
@@ -654,7 +700,7 @@ onMounted(() => {
   height: 8px;
   border-radius: 50%;
   display: inline-block;
-  
+
   &.online {
     background: $success-color;
     box-shadow: 0 0 6px $success-color;
@@ -706,7 +752,7 @@ onMounted(() => {
   font-size: 12px;
   color: $text-secondary;
   margin-bottom: 6px;
-  
+
   &:last-child {
     margin-bottom: 0;
   }
@@ -716,7 +762,7 @@ onMounted(() => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  
+
   &.online { background: $success-color; }
   &.offline { background: $error-color; }
   &.warning { background: $warning-color; }
@@ -739,7 +785,7 @@ onMounted(() => {
 
 .stat-item {
   text-align: center;
-  
+
   .stat-label {
     display: block;
     font-size: 12px;
@@ -751,7 +797,7 @@ onMounted(() => {
     font-weight: bold;
     color: $text-primary;
   }
-  
+
   &.online .stat-value { color: $success-color; }
   &.offline .stat-value { color: $error-color; }
   &.warning .stat-value { color: $warning-color; }
@@ -785,7 +831,7 @@ onMounted(() => {
   cursor: pointer;
   color: $text-muted;
   font-size: 18px;
-  
+
   &:hover {
     color: $error-color;
   }
@@ -804,7 +850,8 @@ onMounted(() => {
   border-radius: 4px;
   overflow: hidden;
   margin-bottom: 15px;
-  
+  cursor: pointer;
+
   img {
     width: 100%;
     display: block;
@@ -826,7 +873,7 @@ onMounted(() => {
   color: #fff;
   cursor: pointer;
   font-size: 13px;
-  
+
   .el-icon {
     font-size: 36px;
   }
@@ -850,7 +897,7 @@ onMounted(() => {
 .info-row {
   display: flex;
   font-size: 13px;
-  
+
   .label {
     width: 70px;
     color: $text-muted;

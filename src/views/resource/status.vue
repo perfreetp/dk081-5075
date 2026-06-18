@@ -15,7 +15,7 @@
           <el-icon :size="36"><VideoCamera /></el-icon>
         </div>
         <div class="card-info">
-          <div class="card-value">{{ deviceList.length }}</div>
+          <div class="card-value">{{ totalCount }}</div>
           <div class="card-label">设备总数</div>
         </div>
       </el-card>
@@ -142,10 +142,12 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted, nextTick } from 'vue'
+import { ref, computed, reactive, onMounted, nextTick, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
-import { deviceList } from '@/mock/data'
+import { useAppStore } from '@/stores'
+
+const store = useAppStore()
 
 const barChartRef = ref(null)
 const pieChartRef = ref(null)
@@ -154,16 +156,17 @@ const statusFilter = ref('all')
 let barChart = null
 let pieChart = null
 
-const onlineCount = computed(() => deviceList.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => deviceList.filter(d => d.status === 'offline').length)
-const warningCount = computed(() => deviceList.filter(d => d.status === 'warning').length)
+const onlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'online').length)
+const offlineCount = computed(() => store.visibleDevices.filter(d => d.status === 'offline').length)
+const warningCount = computed(() => store.visibleDevices.filter(d => d.status === 'warning').length)
+const totalCount = computed(() => store.visibleDevices.length)
 const onlineRate = computed(() => {
-  if (deviceList.length === 0) return 0
-  return ((onlineCount.value / deviceList.length) * 100).toFixed(1)
+  if (totalCount.value === 0) return 0
+  return ((onlineCount.value / totalCount.value) * 100).toFixed(1)
 })
 
 const abnormalList = computed(() => {
-  const list = deviceList.filter(d => d.status !== 'online').map(d => ({
+  const list = store.visibleDevices.filter(d => d.status !== 'online').map(d => ({
     ...d,
     lastOnline: '2024-01-15 12:30:00',
     duration: d.status === 'offline' ? '2小时15分' : '45分钟'
@@ -175,7 +178,7 @@ const abnormalList = computed(() => {
 
 const deviceNameMap = computed(() => {
   const map = {}
-  deviceList.forEach(d => {
+  store.visibleDevices.forEach(d => {
     map[d.id] = d.name
   })
   return map
@@ -327,6 +330,18 @@ onMounted(() => {
     initPieChart()
     window.addEventListener('resize', handleResize)
   })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleResize)
+  if (barChart) {
+    barChart.dispose()
+    barChart = null
+  }
+  if (pieChart) {
+    pieChart.dispose()
+    pieChart = null
+  }
 })
 </script>
 

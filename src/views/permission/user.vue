@@ -248,9 +248,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { orgData, userList as mockUserList } from '@/mock/data'
+import { orgData } from '@/mock/data'
+import { useAppStore } from '@/stores'
+
+const store = useAppStore()
 
 const searchText = ref('')
 const searchOrg = ref('')
@@ -266,19 +269,6 @@ const funcTreeRef = ref(null)
 const dataTreeRef = ref(null)
 const editingUserId = ref(null)
 const selectedOrg = ref(null)
-
-const userData = ref([])
-const userPermissions = reactive({})
-
-onMounted(() => {
-  userData.value = JSON.parse(JSON.stringify(mockUserList))
-  userData.value.forEach(user => {
-    userPermissions[user.id] = {
-      permissions: ['1-1', '1-3', '2-1', '2-3', '2-4', '3-1', '3-3', '4-1'],
-      orgs: ['1', '1-1', '1-2']
-    }
-  })
-})
 
 const pagination = reactive({
   page: 1,
@@ -365,7 +355,7 @@ const getOrgLabelForFilter = () => {
 }
 
 const filteredData = computed(() => {
-  return userData.value.filter(item => {
+  return store.users.filter(item => {
     if (selectedOrg.value) {
       const orgLabel = getOrgLabelForFilter()
       if (!item.org.includes(orgLabel) && item.org !== selectedOrg.value.label) {
@@ -448,7 +438,7 @@ const handleEdit = (row) => {
 const handlePermission = (row) => {
   currentUser.value = row
   
-  const savedPerms = userPermissions[row.id]
+  const savedPerms = store.userDataPermissions[row.id]
   if (savedPerms) {
     checkedPermissions.value = [...savedPerms.permissions]
     checkedOrgs.value = [...savedPerms.orgs]
@@ -485,12 +475,8 @@ const handleDelete = (row) => {
   ElMessageBox.confirm(`确定要删除用户 "${row.name}" 吗？删除后列表和统计将同步更新。`, '提示', {
     type: 'warning'
   }).then(() => {
-    const index = userData.value.findIndex(u => u.id === row.id)
-    if (index > -1) {
-      userData.value.splice(index, 1)
-      delete userPermissions[row.id]
-      ElMessage.success(`用户 "${row.name}" 删除成功`)
-    }
+    store.removeUser(row.id)
+    ElMessage.success(`用户 "${row.name}" 删除成功，当前共 ${store.users.length} 人`)
   }).catch(() => {})
 }
 
@@ -502,18 +488,10 @@ const handleSaveUser = () => {
   userFormRef.value?.validate((valid) => {
     if (valid) {
       if (isEdit.value && editingUserId.value) {
-        const index = userData.value.findIndex(u => u.id === editingUserId.value)
-        if (index > -1) {
-          userData.value[index] = {
-            ...userData.value[index],
-            ...userForm
-          }
-          ElMessage.success(`用户 "${userForm.name}" 修改成功`)
-        }
+        store.updateUser(editingUserId.value, { ...userForm })
+        ElMessage.success(`用户 "${userForm.name}" 修改成功`)
       } else {
-        const maxId = userData.value.length > 0 ? Math.max(...userData.value.map(u => parseInt(u.id) || 0)) : 0
         const newUser = {
-          id: String(maxId + 1),
           name: userForm.name,
           phone: userForm.phone,
           role: userForm.role,
@@ -524,12 +502,8 @@ const handleSaveUser = () => {
           duty: userForm.status === 'on' ? '在岗' : '离岗',
           lastLogin: '-'
         }
-        userData.value.unshift(newUser)
-        userPermissions[newUser.id] = {
-          permissions: ['1-1', '1-3', '2-1', '2-3', '2-4', '3-1', '3-3', '4-1'],
-          orgs: ['1', '1-1', '1-2']
-        }
-        ElMessage.success(`用户 "${userForm.name}" 新增成功`)
+        store.addUser(newUser)
+        ElMessage.success(`用户 "${userForm.name}" 新增成功，当前共 ${store.users.length} 人`)
       }
       showAddDialog.value = false
       resetUserForm()
@@ -543,15 +517,14 @@ const savePermission = () => {
   const perms = funcTreeRef.value?.getCheckedKeys() || []
   const orgs = dataTreeRef.value?.getCheckedKeys() || []
   
-  userPermissions[currentUser.value.id] = {
-    permissions: [...perms],
-    orgs: [...orgs]
-  }
+  store.saveUserPermissions(currentUser.value.id, perms, orgs)
   
   checkedPermissions.value = [...perms]
   checkedOrgs.value = [...orgs]
   
-  ElMessage.success(`已保存 "${currentUser.value.name}" 的权限配置，共 ${perms.length} 项功能权限，${orgs.length} 项数据权限`)
+  const isCurrent = store.currentUserId === currentUser.value.id
+  const hint = isCurrent ? '（当前登录用户，数据范围已即时生效）' : ''
+  ElMessage.success(`已保存 "${currentUser.value.name}" 的权限配置，共 ${perms.length} 项功能权限，${orgs.length} 项数据权限 ${hint}`)
   showPermissionDialog.value = false
 }
 </script>

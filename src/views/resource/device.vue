@@ -258,17 +258,15 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoPlay, VideoPause, FullScreen } from '@element-plus/icons-vue'
-import { deviceList as mockDeviceList } from '@/mock/data'
+import { useAppStore } from '@/stores'
 
-const deviceData = ref([])
+const store = useAppStore()
+const router = useRouter()
 const editingId = ref(null)
-
-onMounted(() => {
-  deviceData.value = JSON.parse(JSON.stringify(mockDeviceList))
-})
 
 const filterForm = reactive({
   name: '',
@@ -309,7 +307,7 @@ const formRules = {
 }
 
 const filteredData = computed(() => {
-  return deviceData.value.filter(item => {
+  return store.devices.filter(item => {
     if (filterForm.name && !item.name.includes(filterForm.name)) return false
     if (filterForm.org && !item.org.includes(filterForm.org)) return false
     if (filterForm.status && item.status !== filterForm.status) return false
@@ -319,9 +317,9 @@ const filteredData = computed(() => {
 })
 
 const total = computed(() => filteredData.value.length)
-const onlineCount = computed(() => deviceData.value.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => deviceData.value.filter(d => d.status === 'offline').length)
-const warningCount = computed(() => deviceData.value.filter(d => d.status === 'warning').length)
+const onlineCount = computed(() => store.devices.filter(d => d.status === 'online').length)
+const offlineCount = computed(() => store.devices.filter(d => d.status === 'offline').length)
+const warningCount = computed(() => store.devices.filter(d => d.status === 'warning').length)
 
 const tableData = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
@@ -377,10 +375,11 @@ const handleDelete = (row) => {
   ElMessageBox.confirm(`确定要删除设备 "${row.name}" 吗？删除后列表和统计将同步更新。`, '提示', {
     type: 'warning'
   }).then(() => {
-    const index = deviceData.value.findIndex(d => d.id === row.id)
-    if (index > -1) {
-      deviceData.value.splice(index, 1)
-      ElMessage.success(`设备 "${row.name}" 删除成功`)
+    const idx = store.devices.findIndex(d => d.id === row.id)
+    if (idx > -1) {
+      store.devices.splice(idx, 1)
+      store.removeFromWall(row.id)
+      ElMessage.success(`设备 "${row.name}" 删除成功，当前共 ${store.devices.length} 台`)
     }
   }).catch(() => {})
 }
@@ -410,13 +409,13 @@ const handleSubmit = () => {
   deviceFormRef.value?.validate((valid) => {
     if (valid) {
       if (editingId.value) {
-        const index = deviceData.value.findIndex(d => d.id === editingId.value)
+        const index = store.devices.findIndex(d => d.id === editingId.value)
         if (index > -1) {
-          deviceData.value[index] = {
-            ...deviceData.value[index],
+          store.devices[index] = {
+            ...store.devices[index],
             ...deviceForm,
-            lng: parseFloat(deviceForm.lng) || deviceData.value[index].lng,
-            lat: parseFloat(deviceForm.lat) || deviceData.value[index].lat
+            lng: parseFloat(deviceForm.lng) || store.devices[index].lng,
+            lat: parseFloat(deviceForm.lat) || store.devices[index].lat
           }
           ElMessage.success(`设备 "${deviceForm.name}" 修改成功`)
         }
@@ -433,8 +432,8 @@ const handleSubmit = () => {
           lng: parseFloat(deviceForm.lng) || 39.9042,
           lat: parseFloat(deviceForm.lat) || 116.4074
         }
-        deviceData.value.unshift(newDevice)
-        ElMessage.success(`设备 "${deviceForm.name}" 新增成功`)
+        store.devices.unshift(newDevice)
+        ElMessage.success(`设备 "${deviceForm.name}" 新增成功，当前共 ${store.devices.length} 台`)
       }
       showAddDialog.value = false
       handleDialogClose()
@@ -443,11 +442,17 @@ const handleSubmit = () => {
 }
 
 const handleAddToWall = () => {
-  ElMessage.success('已推送到视频墙')
+  if (!currentDevice.value) return
+  store.addToWall(currentDevice.value)
+  ElMessage.success(`已将 ${currentDevice.value.name} 推送到视频墙，共 ${store.wallDevices.length} 路`)
+  router.push('/event/video-wall')
 }
 
 const handlePlayback = () => {
-  ElMessage.info('跳转到历史回放页面')
+  if (!currentDevice.value) return
+  store.setPlaybackDevice(currentDevice.value)
+  showPreviewDialog.value = false
+  router.push('/event/playback')
 }
 </script>
 

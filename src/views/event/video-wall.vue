@@ -169,9 +169,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { deviceList } from '@/mock/data'
+import { useAppStore } from '@/stores'
+
+const store = useAppStore()
 
 const layoutType = ref('9')
 const searchText = ref('')
@@ -179,7 +181,11 @@ const activeCell = ref(1)
 const currentTime = ref('')
 let timer = null
 
-const wallVideos = ref(Array(9).fill(null))
+const wallVideos = computed(() => {
+  const count = parseInt(layoutType.value)
+  const devices = store.wallDevices.slice(0, count)
+  return [...devices, ...Array(Math.max(0, count - devices.length)).fill(null)]
+})
 
 const scenes = [
   { id: 1, name: '城区全景', desc: '4个城区关键点位' },
@@ -189,8 +195,8 @@ const scenes = [
 ]
 
 const filteredDevices = computed(() => {
-  if (!searchText.value) return deviceList
-  return deviceList.filter(d => 
+  if (!searchText.value) return store.visibleDevices
+  return store.visibleDevices.filter(d =>
     d.name.includes(searchText.value) || d.org.includes(searchText.value)
   )
 })
@@ -211,18 +217,26 @@ const selectCell = (index) => {
 }
 
 const addDeviceToWall = (device) => {
-  const idx = wallVideos.value.findIndex(v => v === null)
-  if (idx === -1) {
+  const exists = store.wallDevices.find(d => d.id === device.id)
+  if (exists) {
+    ElMessage.warning(`${device.name} 已在视频墙上`)
+    return
+  }
+  const count = parseInt(layoutType.value)
+  if (store.wallDevices.length >= count) {
     ElMessage.warning('所有窗口已满，请先移除部分视频')
     return
   }
-  wallVideos.value[activeCell.value - 1] = device
-  ElMessage.success(`已将 ${device.name} 添加到第 ${activeCell.value} 窗口`)
+  store.addToWall(device)
+  ElMessage.success(`已将 ${device.name} 推上墙，当前共 ${store.wallDevices.length} 路`)
 }
 
 const removeVideo = (index) => {
-  wallVideos.value[index - 1] = null
-  ElMessage.success('已移除视频')
+  const device = wallVideos.value[index - 1]
+  if (device) {
+    store.removeFromWall(device.id)
+    ElMessage.success(`已移除 ${device.name}`)
+  }
 }
 
 const handleAllPlay = () => {
@@ -257,16 +271,21 @@ const handleDragStart = (e, device) => {
 }
 
 const applyScene = (scene) => {
-  const onlineDevices = deviceList.filter(d => d.status === 'online')
-  const count = parseInt(layoutType.value)
-  wallVideos.value = Array(count).fill(null).map((_, i) => onlineDevices[i] || null)
-  ElMessage.success(`已应用场景：${scene.name}`)
+  store.clearWall()
+  const onlineDevices = store.visibleDevices.filter(d => d.status === 'online').slice(0, parseInt(layoutType.value))
+  onlineDevices.forEach(d => store.addToWall(d))
+  ElMessage.success(`已应用场景：${scene.name}，共加载 ${onlineDevices.length} 路视频`)
 }
 
+watch(layoutType, () => {
+  activeCell.value = Math.min(activeCell.value, parseInt(layoutType.value))
+})
+
 onMounted(() => {
-  const onlineDevices = deviceList.filter(d => d.status === 'online').slice(0, 6)
-  wallVideos.value = [...onlineDevices, ...Array(9 - onlineDevices.length).fill(null)]
-  
+  if (store.wallDevices.length === 0) {
+    const onlineDevices = store.visibleDevices.filter(d => d.status === 'online').slice(0, 6)
+    onlineDevices.forEach(d => store.addToWall(d))
+  }
   updateTime()
   timer = setInterval(updateTime, 1000)
 })

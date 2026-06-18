@@ -240,7 +240,11 @@
 <script setup>
 import { ref, computed, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { deviceList, alarmList } from '@/mock/data'
+import { useRouter } from 'vue-router'
+import { useAppStore } from '@/stores'
+
+const store = useAppStore()
+const router = useRouter()
 
 const searchText = ref('')
 const selectedDevice = ref(null)
@@ -262,14 +266,21 @@ const videoSegments = ref([
 ])
 
 const filteredDevices = computed(() => {
-  if (!searchText.value) return deviceList.slice(0, 8)
-  return deviceList.filter(d => 
-    d.name.includes(searchText.value) || d.org.includes(searchText.value)
-  ).slice(0, 8)
+  let list = store.visibleDevices
+  if (searchText.value) {
+    list = list.filter(d =>
+      d.name.includes(searchText.value) || d.org.includes(searchText.value)
+    )
+  }
+  return list.slice(0, 8)
 })
 
 const relatedAlarms = computed(() => {
-  return alarmList.slice(0, 5)
+  if (!selectedDevice.value) {
+    return store.alarms.slice(0, 5)
+  }
+  const name = selectedDevice.value.name
+  return store.alarms.filter(a => a.device === name || a.description.includes(name)).slice(0, 5)
 })
 
 const progressPercent = computed(() => {
@@ -367,6 +378,10 @@ const quickPlay = (type) => {
 }
 
 const playAlarmVideo = (alarm) => {
+  const device = store.visibleDevices.find(d => d.name === alarm.device)
+  if (device) {
+    selectedDevice.value = device
+  }
   currentTime.value = 52200
   isPlaying.value = true
   startPlayback()
@@ -393,12 +408,31 @@ const handleFullscreen = () => {
 }
 
 const startDrag = (e) => {
-  // 简化实现
   ElMessage.info('拖动进度条')
 }
 
+const handleAddToWall = () => {
+  if (!selectedDevice.value) {
+    ElMessage.warning('请先选择设备')
+    return
+  }
+  store.addToWall(selectedDevice.value)
+  ElMessage.success(`已将 ${selectedDevice.value.name} 推送到视频墙`)
+}
+
+const goToVideoWall = () => {
+  if (selectedDevice.value) {
+    store.addToWall(selectedDevice.value)
+  }
+  router.push('/event/video-wall')
+}
+
 onMounted(() => {
-  selectedDevice.value = deviceList[0]
+  if (store.playbackDevice) {
+    selectedDevice.value = store.playbackDevice
+  } else if (store.visibleDevices.length > 0) {
+    selectedDevice.value = store.visibleDevices[0]
+  }
 })
 </script>
 

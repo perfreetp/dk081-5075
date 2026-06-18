@@ -86,16 +86,31 @@
           <el-badge :value="alarmCount" class="alarm-badge" type="danger">
             <el-icon class="header-icon" @click="goToAlarm"><Bell /></el-icon>
           </el-badge>
-          <div class="user-info" @click="showUserMenu = !showUserMenu">
+          <div class="user-info" @click="showUserSwitch = !showUserSwitch">
             <el-avatar :size="32" class="user-avatar">
-              <el-icon><UserFilled /></el-icon>
+              {{ currentUserName.charAt(0) }}
             </el-avatar>
-            <span class="user-name">张建国</span>
-            <el-dropdown trigger="click">
+            <div class="user-detail">
+              <span class="user-name">{{ currentUserName }}</span>
+              <span class="user-role">{{ currentUserRole }}</span>
+            </div>
+            <el-dropdown trigger="click" @visible-change="(v) => showUserSwitch = v">
               <el-icon><CaretBottom /></el-icon>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item>个人中心</el-dropdown-item>
+                  <el-dropdown-item disabled style="opacity:1; cursor:default; padding:8px 16px;">
+                    <div style="font-size:12px; color:#909399;">切换登录用户（测试权限）</div>
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    v-for="u in store.users"
+                    :key="u.id"
+                    @click.stop="switchUser(u.id)"
+                    :class="{ active: store.currentUserId === u.id }"
+                  >
+                    <span style="display:inline-block; width:120px;">{{ u.name }}</span>
+                    <span style="color:#909399; font-size:12px;">{{ u.role }}</span>
+                  </el-dropdown-item>
+                  <el-dropdown-item divided>个人中心</el-dropdown-item>
                   <el-dropdown-item>修改密码</el-dropdown-item>
                   <el-dropdown-item divided>退出登录</el-dropdown-item>
                 </el-dropdown-menu>
@@ -119,20 +134,30 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { alarmList } from '@/mock/data'
+import { ElMessage } from 'element-plus'
+import { useAppStore } from '@/stores'
 
+const store = useAppStore()
 const route = useRoute()
 const router = useRouter()
 const isCollapsed = ref(false)
 const currentTime = ref('')
 const showUserMenu = ref(false)
+const showUserSwitch = ref(false)
 let timer = null
 
 const activeMenu = computed(() => route.path)
 
-const alarmCount = computed(() => {
-  return alarmList.filter(item => item.status === 'pending').length
-})
+const alarmCount = computed(() => store.pendingAlarmCount)
+
+const currentUserName = computed(() => store.currentUser?.name || '张建国')
+const currentUserRole = computed(() => store.currentUser?.role || '市级管理员')
+
+const switchUser = (userId) => {
+  store.currentUserId = userId
+  ElMessage.success(`已切换到用户：${store.currentUser?.name}，权限范围已更新`)
+  showUserSwitch.value = false
+}
 
 const breadcrumbs = computed(() => {
   const matched = route.matched.filter(item => item.meta && item.meta.title)
@@ -280,8 +305,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   cursor: pointer;
-  
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+
   &:hover {
+    background: rgba(24, 144, 255, 0.08);
     .user-name {
       color: $primary-color;
     }
@@ -290,11 +319,31 @@ onUnmounted(() => {
 
 .user-avatar {
   background: rgba(24, 144, 255, 0.2);
+  color: $primary-color;
+}
+
+.user-detail {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
 }
 
 .user-name {
   color: $text-secondary;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.user-role {
+  color: $text-muted;
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+:deep(.el-dropdown-menu__item.active) {
+  background: rgba(24, 144, 255, 0.12);
+  color: $primary-color;
+  font-weight: 500;
 }
 
 .main-content {

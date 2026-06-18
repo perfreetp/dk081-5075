@@ -164,13 +164,13 @@
           <div class="detail-section">
             <h4><el-icon><Setting /></el-icon> 快捷操作</h4>
             <div class="action-btns">
-              <el-button type="primary">
+              <el-button type="primary" @click="handlePreview(currentNode)">
                 <el-icon><VideoPlay /></el-icon>视频预览
               </el-button>
-              <el-button type="success">
+              <el-button type="success" @click="handleAddToWall(currentNode)">
                 <el-icon><Monitor /></el-icon>一键上墙
               </el-button>
-              <el-button type="warning">
+              <el-button type="warning" @click="handlePlayback(currentNode)">
                 <el-icon><Clock /></el-icon>历史回放
               </el-button>
               <el-button type="info">
@@ -234,9 +234,14 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, reactive } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { orgData, deviceList } from '@/mock/data'
+import { orgData } from '@/mock/data'
+import { useAppStore } from '@/stores'
+
+const store = useAppStore()
+const router = useRouter()
 
 const viewMode = ref('tree')
 const filterText = ref('')
@@ -258,9 +263,7 @@ const flatOrgList = computed(() => {
   const flatten = (nodes) => {
     nodes.forEach(node => {
       result.push(node)
-      if (node.children) {
-        flatten(node.children)
-      }
+      if (node.children) flatten(node.children)
     })
   }
   flatten(orgData)
@@ -269,12 +272,12 @@ const flatOrgList = computed(() => {
 
 const getDeviceCount = (node) => {
   const name = node.label.replace('综治中心', '')
-  return deviceList.filter(d => d.org.includes(name)).length
+  return store.visibleDevices.filter(d => d.org.includes(name)).length
 }
 
 const getOnlineCount = (node) => {
   const name = node.label.replace('综治中心', '')
-  return deviceList.filter(d => d.org.includes(name) && d.status === 'online').length
+  return store.visibleDevices.filter(d => d.org.includes(name) && d.status === 'online').length
 }
 
 const getOnlineRate = (node) => {
@@ -284,32 +287,26 @@ const getOnlineRate = (node) => {
 }
 
 const getLevelText = (level) => {
-  const map = {
-    city: '市级',
-    district: '区级',
-    street: '街道',
-    community: '社区',
-    unit: '单位'
-  }
+  const map = { city: '市级', district: '区级', street: '街道', community: '社区', unit: '单位' }
   return map[level] || level
 }
 
 const getLevelTagType = (level) => {
-  const map = {
-    city: 'primary',
-    district: 'success',
-    street: 'warning',
-    community: '',
-    unit: 'info'
-  }
+  const map = { city: 'primary', district: 'success', street: 'warning', community: '', unit: 'info' }
   return map[level] || ''
 }
 
 const nodeDevices = computed(() => {
   if (!currentNode.value) return []
   const name = currentNode.value.label.replace('综治中心', '')
-  return deviceList.filter(d => d.org.includes(name)).slice(0, 5)
+  return store.visibleDevices.filter(d => d.org.includes(name)).slice(0, 5)
 })
+
+const getOrgFirstDevice = (node) => {
+  const name = node.label.replace('综治中心', '')
+  return store.visibleDevices.find(d => d.org.includes(name) && d.status === 'online')
+    || store.visibleDevices.find(d => d.org.includes(name))
+}
 
 const findParent = (nodes, targetId, parent = null) => {
   for (const node of nodes) {
@@ -348,19 +345,39 @@ const handleCollapseAll = () => {
 }
 
 const handleViewDevice = (row) => {
-  ElMessage.info(`查看设备：${row.name}`)
+  store.setPreviewDevice(row)
+  ElMessage.success(`已打开设备：${row.name} 预览`)
 }
 
 const handlePreview = (row) => {
-  ElMessage.success(`打开视频预览：${row.label}`)
+  const device = getOrgFirstDevice(row)
+  if (device) {
+    store.setPreviewDevice(device)
+    ElMessage.success(`已打开 ${row.label} 视频预览：${device.name}`)
+  } else {
+    ElMessage.warning(`${row.label} 暂无可预览的设备`)
+  }
 }
 
 const handleAddToWall = (row) => {
-  ElMessage.success(`已将 ${row.label} 的视频推送到视频墙`)
+  const name = row.label.replace('综治中心', '')
+  const devices = store.visibleDevices.filter(d => d.org.includes(name) && d.status === 'online').slice(0, 4)
+  if (devices.length === 0) {
+    ElMessage.warning(`${row.label} 暂无可上墙的在线设备`)
+    return
+  }
+  devices.forEach(d => store.addToWall(d))
+  ElMessage.success(`已将 ${row.label} 的 ${devices.length} 路视频推送到视频墙，共 ${store.wallDevices.length} 路`)
 }
 
 const handlePlayback = (row) => {
-  ElMessage.success(`打开 ${row.label} 的历史回放`)
+  const device = getOrgFirstDevice(row)
+  if (device) {
+    store.setPlaybackDevice(device)
+    router.push('/event/playback')
+  } else {
+    ElMessage.warning(`${row.label} 暂无可回放的设备`)
+  }
 }
 </script>
 
