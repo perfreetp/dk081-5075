@@ -1,0 +1,246 @@
+@import './variables.scss';
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: $bg-dark;
+  color: $text-primary;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.el-card {
+  background: linear-gradient(135deg, rgba(24, 144, 255, 0.08), rgba(24, 144, 255, 0.02)) !important;
+  border: 1px solid $border-color !important;
+  color: $text-primary !important;
+}
+
+.el-card__header {
+  border-bottom: 1px solid $border-color !important;
+  color: $text-primary !important;
+  font-weight: 600;
+}
+
+.el-table {
+  background: transparent !important;
+  color: $text-primary !important;
+}
+
+.el-table tr {
+  background: transparent !important;
+}
+
+.el-table th.el-table__cell {
+  background: rgba(24, 144, 255, 0.1) !important;
+  color: $text-primary !important;
+  border-bottom: 1px solid $border-color !important;
+}
+
+.el-table td.el-table__cell {
+  border-bottom: 1px solid rgba(24, 144, 255, 0.1) !important;
+  color: $text-secondary !important;
+}
+
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: rgba(24, 144, 255, 0.03) !important;
+}
+
+.el-input__wrapper {
+  background: rgba(24, 144, 255, 0.05) !important;
+  border: 1px solid $border-color !important;
+  box-shadow: none !important;
+}
+
+.el-input__inner {
+  color: $text-primary !important;
+}
+
+.el-select__wrapper {
+  background: rgba(24, 144, 255, 0.05) !important;
+  border: 1px solid $border-color !important;
+}
+
+.el-select-dropdown {
+  background: $bg-dark !important;
+  border: 1px solid $border-color !important;
+}
+
+.el-select-dropdown__item {
+  color: $text-secondary !important;
+}
+
+.el-select-dropdown__item.hover,
+.el-select-dropdown__item:hover {
+  background: rgba(24, 144, 255, 0.1) !important;
+}
+
+.el-button--primary {
+  background: $primary-color !important;
+  border-color: $primary-color !important;
+}
+
+.el-menu {
+  background: transparent !important;
+  border-right: none !important;
+}
+
+.el-menu-item,
+.el-sub-menu__title {
+  color: $text-secondary !important;
+}
+
+.el-menu-item:hover,
+.el-sub-menu__title:hover {
+  background: rgba(24, 144, 255, 0.1) !important;
+}
+
+.el-menu-item.is-active {
+  background: rgba(24, 144, 255, 0.2) !important;
+  color: $primary-color !important;
+}
+
+.el-pagination {
+  color: $text-secondary !important;
+}
+
+.el-pagination button {
+  background: transparent !important;
+  color: $text-secondary !important;
+}
+
+.el-pager li {
+  background: transparent !important;
+  color: $text-secondary !important;
+}
+
+.el-pager li.is-active {
+  color: $primary-color !important;
+}
+
+.el-dialog {
+  background: $bg-dark !important;
+  border: 1px solid $border-color !important;
+}
+
+.el-dialog__title {
+  color: $text-primary !important;
+}
+
+.el-dialog__body {
+  color: $text-secondary !important;
+}
+
+.el-form-item__label {
+  color: $text-secondary !important;
+}
+
+.el-tree {
+  background: transparent !important;
+  color: $text-secondary !important;
+}
+
+.el-tree-node__content:hover {
+  background: rgba(24, 144, 255, 0.1) !important;
+}
+
+.el-tree-node.is-current > .el-tree-node__content {
+  background: rgba(24, 144, 255, 0.2) !important;
+  color: $primary-color !important;
+}
+
+.el-tabs__item {
+  color: $text-secondary !important;
+}
+
+.el-tabs__item.is-active {
+  color: $primary-color !important;
+}
+
+.el-tabs__active-bar {
+  background-color: $primary-color !important;
+}
+
+.el-tabs__nav-wrap::after {
+  background-color: $border-color !important;
+}
+
+.el-tag {
+  border: none !important;
+}
+
+.el-breadcrumb__inner a,
+.el-breadcrumb__inner.is-link {
+  color: $text-secondary !important;
+}
+
+.el-breadcrumb__inner {
+  color: $text-primary !important;
+}
+
+.el-breadcrumb__separator {
+  color: $text-muted !important;
+}
+
+.common-page {
+  padding: 20px;
+  height: 100%;
+  overflow: auto;
+  @include scrollbar;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: $text-primary;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  
+  &.online {
+    background: $success-color;
+    box-shadow: 0 0 6px $success-color;
+  }
+  
+  &.offline {
+    background: $error-color;
+  }
+  
+  &.warning {
+    background: $warning-color;
+  }
+}
+
+.card-title {
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: $text-primary;
+  
+  &::before {
+    content: '';
+    display: inline-block;
+    width: 4px;
+    height: 16px;
+    background: $primary-color;
+    margin-right: 8px;
+    border-radius: 2px;
+  }
+}
