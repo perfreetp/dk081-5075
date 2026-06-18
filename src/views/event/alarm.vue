@@ -421,9 +421,9 @@ const handlePlayback = () => {
 const handleLocateOnMap = () => {
   const device = currentAlarmDevice.value
   if (device) {
+    store.setMapFocusDevice(device)
     showDetailDialog.value = false
     router.push('/cascade/map')
-    ElMessage.success(`已定位到 ${device.name}，请在地图中查看`)
   } else {
     ElMessage.warning('未找到关联设备位置')
   }

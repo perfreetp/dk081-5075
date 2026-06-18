@@ -408,14 +408,16 @@ const handleDialogClose = () => {
 const handleSubmit = () => {
   deviceFormRef.value?.validate((valid) => {
     if (valid) {
+      const latNum = parseFloat(deviceForm.lat)
+      const lngNum = parseFloat(deviceForm.lng)
       if (editingId.value) {
         const index = store.devices.findIndex(d => d.id === editingId.value)
         if (index > -1) {
           store.devices[index] = {
             ...store.devices[index],
             ...deviceForm,
-            lng: parseFloat(deviceForm.lng) || store.devices[index].lng,
-            lat: parseFloat(deviceForm.lat) || store.devices[index].lat
+            lat: !isNaN(latNum) ? latNum : store.devices[index].lat,
+            lng: !isNaN(lngNum) ? lngNum : store.devices[index].lng
           }
           ElMessage.success(`设备 "${deviceForm.name}" 修改成功`)
         }
@@ -429,8 +431,8 @@ const handleSubmit = () => {
           ip: deviceForm.ip,
           resolution: deviceForm.resolution,
           brand: deviceForm.brand,
-          lng: parseFloat(deviceForm.lng) || 39.9042,
-          lat: parseFloat(deviceForm.lat) || 116.4074
+          lat: !isNaN(latNum) ? latNum : (39.9042 + (Math.random() - 0.5) * 0.02),
+          lng: !isNaN(lngNum) ? lngNum : (116.4074 + (Math.random() - 0.5) * 0.02)
         }
         store.devices.unshift(newDevice)
         ElMessage.success(`设备 "${deviceForm.name}" 新增成功，当前共 ${store.devices.length} 台`)

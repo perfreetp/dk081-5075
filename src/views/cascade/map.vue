@@ -438,6 +438,28 @@ const selectDevice = (device) => {
   }
 }
 
+const handleMapFocus = () => {
+  const target = store.mapFocusDevice
+  if (!target) return
+  store.setMapFocusDevice(null)
+
+  const visible = store.visibleDevices.find(d => d.id === target.id)
+  if (!visible) {
+    ElMessage.warning(`关联设备 "${target.name}" 因当前数据权限不可见，无法在地图上定位`)
+    return
+  }
+
+  selectedDevice.value = visible
+  setTimeout(() => {
+    if (map) {
+      try {
+        map.flyTo([visible.lat, visible.lng], 16, { duration: 0.6 })
+      } catch (e) {}
+    }
+  }, 300)
+  ElMessage.success(`已定位到关联设备：${visible.name}`)
+}
+
 const handleLocate = () => {
   if (map) {
     try {
@@ -493,6 +515,7 @@ watch(() => store.visibleDevices, () => {
 onMounted(() => {
   nextTick(() => {
     initMap()
+    handleMapFocus()
   })
   window.addEventListener('resize', handleResize)
 })
