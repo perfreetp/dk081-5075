@@ -159,6 +159,7 @@
       <el-tabs v-model="permissionTab">
         <el-tab-pane label="功能权限" name="function">
           <el-tree
+            ref="funcTreeRef"
             :data="permissionTree"
             show-checkbox
             node-key="id"
@@ -169,6 +170,7 @@
         </el-tab-pane>
         <el-tab-pane label="数据权限" name="data">
           <el-tree
+            ref="dataTreeRef"
             :data="orgData"
             show-checkbox
             node-key="id"
@@ -185,7 +187,7 @@
       </template>
     </el-dialog>
     
-    <el-dialog v-model="showAddDialog" :title="isEdit ? '编辑用户' : '新增用户'" width="550px">
+    <el-dialog v-model="showAddDialog" :title="isEdit ? '编辑用户' : '新增用户'" width="550px" @close="resetUserForm">
       <el-form :model="userForm" :rules="formRules" ref="userFormRef" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
@@ -238,7 +240,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
+        <el-button @click="showAddDialog = false; resetUserForm()">取消</el-button>
         <el-button type="primary" @click="handleSaveUser">保存</el-button>
       </template>
     </el-dialog>
@@ -246,9 +248,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { orgData, userList } from '@/mock/data'
+import { orgData, userList as mockUserList } from '@/mock/data'
 
 const searchText = ref('')
 const searchOrg = ref('')
@@ -260,6 +262,23 @@ const isEdit = ref(false)
 const currentUser = ref(null)
 const permissionTab = ref('function')
 const userFormRef = ref(null)
+const funcTreeRef = ref(null)
+const dataTreeRef = ref(null)
+const editingUserId = ref(null)
+const selectedOrg = ref(null)
+
+const userData = ref([])
+const userPermissions = reactive({})
+
+onMounted(() => {
+  userData.value = JSON.parse(JSON.stringify(mockUserList))
+  userData.value.forEach(user => {
+    userPermissions[user.id] = {
+      permissions: ['1-1', '1-3', '2-1', '2-3', '2-4', '3-1', '3-3', '4-1'],
+      orgs: ['1', '1-1', '1-2']
+    }
+  })
+})
 
 const pagination = reactive({
   page: 1,
@@ -267,6 +286,7 @@ const pagination = reactive({
 })
 
 const userForm = reactive({
+  id: '',
   name: '',
   phone: '',
   role: '',
@@ -334,13 +354,24 @@ const permissionTree = [
   }
 ]
 
-const checkedPermissions = ref(['1-1', '1-3', '2-1', '2-3', '2-4', '3-1', '3-3', '4-1'])
-const checkedOrgs = ref(['1', '1-1', '1-2'])
+const checkedPermissions = ref([])
+const checkedOrgs = ref([])
 
-const total = computed(() => userList.length)
+const total = computed(() => filteredData.value.length)
+
+const getOrgLabelForFilter = () => {
+  if (!selectedOrg.value) return null
+  return selectedOrg.value.label.replace('综治中心', '')
+}
 
 const filteredData = computed(() => {
-  return userList.filter(item => {
+  return userData.value.filter(item => {
+    if (selectedOrg.value) {
+      const orgLabel = getOrgLabelForFilter()
+      if (!item.org.includes(orgLabel) && item.org !== selectedOrg.value.label) {
+        return false
+      }
+    }
     if (searchText.value && !item.name.includes(searchText.value) && !item.phone.includes(searchText.value)) {
       return false
     }
@@ -372,8 +403,26 @@ const getRoleTagType = (role) => {
   return map[role] || ''
 }
 
+const resetUserForm = () => {
+  userFormRef.value?.resetFields()
+  Object.assign(userForm, {
+    id: '',
+    name: '',
+    phone: '',
+    role: '',
+    org: '',
+    email: '',
+    status: 'on',
+    remark: ''
+  })
+  isEdit.value = false
+  editingUserId.value = null
+}
+
 const handleOrgClick = (data) => {
-  ElMessage.info(`已选择：${data.label}`)
+  selectedOrg.value = data
+  pagination.page = 1
+  ElMessage.info(`已筛选：${data.label}，当前显示 ${filteredData.value.length} 个用户`)
 }
 
 const handleUserClick = (row) => {
@@ -382,13 +431,42 @@ const handleUserClick = (row) => {
 
 const handleEdit = (row) => {
   isEdit.value = true
-  Object.assign(userForm, row)
+  editingUserId.value = row.id
+  Object.assign(userForm, {
+    id: row.id,
+    name: row.name,
+    phone: row.phone,
+    role: row.role,
+    org: row.org,
+    email: row.email || '',
+    status: row.status,
+    remark: row.remark || ''
+  })
   showAddDialog.value = true
 }
 
 const handlePermission = (row) => {
   currentUser.value = row
+  
+  const savedPerms = userPermissions[row.id]
+  if (savedPerms) {
+    checkedPermissions.value = [...savedPerms.permissions]
+    checkedOrgs.value = [...savedPerms.orgs]
+  } else {
+    checkedPermissions.value = ['1-1', '1-3', '2-1', '2-3', '2-4', '3-1', '3-3', '4-1']
+    checkedOrgs.value = ['1', '1-1', '1-2']
+  }
+  
   showPermissionDialog.value = true
+  
+  nextTick(() => {
+    if (funcTreeRef.value) {
+      funcTreeRef.value.setCheckedKeys(checkedPermissions.value)
+    }
+    if (dataTreeRef.value) {
+      dataTreeRef.value.setCheckedKeys(checkedOrgs.value)
+    }
+  })
 }
 
 const handleStatusChange = (row) => {
@@ -404,10 +482,15 @@ const handleResetPwd = (row) => {
 }
 
 const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除用户 "${row.name}" 吗？`, '提示', {
+  ElMessageBox.confirm(`确定要删除用户 "${row.name}" 吗？删除后列表和统计将同步更新。`, '提示', {
     type: 'warning'
   }).then(() => {
-    ElMessage.success('删除成功')
+    const index = userData.value.findIndex(u => u.id === row.id)
+    if (index > -1) {
+      userData.value.splice(index, 1)
+      delete userPermissions[row.id]
+      ElMessage.success(`用户 "${row.name}" 删除成功`)
+    }
   }).catch(() => {})
 }
 
@@ -418,14 +501,57 @@ const handleBatchImport = () => {
 const handleSaveUser = () => {
   userFormRef.value?.validate((valid) => {
     if (valid) {
-      ElMessage.success(isEdit.value ? '修改成功' : '新增成功')
+      if (isEdit.value && editingUserId.value) {
+        const index = userData.value.findIndex(u => u.id === editingUserId.value)
+        if (index > -1) {
+          userData.value[index] = {
+            ...userData.value[index],
+            ...userForm
+          }
+          ElMessage.success(`用户 "${userForm.name}" 修改成功`)
+        }
+      } else {
+        const maxId = userData.value.length > 0 ? Math.max(...userData.value.map(u => parseInt(u.id) || 0)) : 0
+        const newUser = {
+          id: String(maxId + 1),
+          name: userForm.name,
+          phone: userForm.phone,
+          role: userForm.role,
+          org: userForm.org,
+          email: userForm.email,
+          status: userForm.status,
+          remark: userForm.remark,
+          duty: userForm.status === 'on' ? '在岗' : '离岗',
+          lastLogin: '-'
+        }
+        userData.value.unshift(newUser)
+        userPermissions[newUser.id] = {
+          permissions: ['1-1', '1-3', '2-1', '2-3', '2-4', '3-1', '3-3', '4-1'],
+          orgs: ['1', '1-1', '1-2']
+        }
+        ElMessage.success(`用户 "${userForm.name}" 新增成功`)
+      }
       showAddDialog.value = false
+      resetUserForm()
     }
   })
 }
 
 const savePermission = () => {
-  ElMessage.success('权限配置已保存')
+  if (!currentUser.value) return
+  
+  const perms = funcTreeRef.value?.getCheckedKeys() || []
+  const orgs = dataTreeRef.value?.getCheckedKeys() || []
+  
+  userPermissions[currentUser.value.id] = {
+    permissions: [...perms],
+    orgs: [...orgs]
+  }
+  
+  checkedPermissions.value = [...perms]
+  checkedOrgs.value = [...orgs]
+  
+  ElMessage.success(`已保存 "${currentUser.value.name}" 的权限配置，共 ${perms.length} 项功能权限，${orgs.length} 项数据权限`)
   showPermissionDialog.value = false
 }
 </script>

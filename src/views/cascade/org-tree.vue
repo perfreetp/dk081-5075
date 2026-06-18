@@ -215,11 +215,17 @@
         <el-table-column label="在线率" width="100" align="center">
           <template #default="{ row }">{{ getOnlineRate(row) }}%</template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center">
+        <el-table-column label="操作" width="220" align="center">
           <template #default="{ row }">
-            <el-button type="primary" size="small" text>预览</el-button>
-            <el-button type="success" size="small" text">上墙</el-button>
-            <el-button type="warning" size="small" text">回放</el-button>
+            <el-button type="primary" size="small" text @click="handlePreview(row)">
+              <el-icon><VideoPlay /></el-icon>预览
+            </el-button>
+            <el-button type="success" size="small" text @click="handleAddToWall(row)">
+              <el-icon><Monitor /></el-icon>上墙
+            </el-button>
+            <el-button type="warning" size="small" text @click="handlePlayback(row)">
+              <el-icon><Clock /></el-icon>回放
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -343,6 +349,18 @@ const handleCollapseAll = () => {
 
 const handleViewDevice = (row) => {
   ElMessage.info(`查看设备：${row.name}`)
+}
+
+const handlePreview = (row) => {
+  ElMessage.success(`打开视频预览：${row.label}`)
+}
+
+const handleAddToWall = (row) => {
+  ElMessage.success(`已将 ${row.label} 的视频推送到视频墙`)
+}
+
+const handlePlayback = (row) => {
+  ElMessage.success(`打开 ${row.label} 的历史回放`)
 }
 </script>
 

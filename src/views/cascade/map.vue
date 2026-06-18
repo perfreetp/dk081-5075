@@ -28,7 +28,7 @@
                 <span class="layer-icon" :style="{ background: layer.color }"></span>
                 {{ layer.name }}
               </el-checkbox>
-              <span class="layer-count">{{ layer.count }}</span>
+              <span class="layer-count">{{ visibleDeviceCount[layer.key] }}</span>
             </div>
           </div>
         </el-card>
@@ -49,6 +49,7 @@
             </template>
           </el-input>
           <el-tree
+            ref="treeRef"
             :data="orgData"
             :props="{ label: 'label', children: 'children' }"
             default-expand-all
@@ -115,7 +116,7 @@
         <div class="map-stats">
           <div class="stat-item">
             <span class="stat-label">设备总数</span>
-            <span class="stat-value">{{ deviceList.length }}</span>
+            <span class="stat-value">{{ deviceData.length }}</span>
           </div>
           <div class="stat-item online">
             <span class="stat-label">在线</span>
@@ -202,31 +203,98 @@
 import { ref, reactive, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import L from 'leaflet'
-import { orgData, deviceList } from '@/mock/data'
+import { orgData, deviceList as mockDeviceList } from '@/mock/data'
 
 const mapType = ref('standard')
 const searchText = ref('')
 const selectedDevice = ref(null)
+const treeRef = ref(null)
+const selectedOrgIds = ref([])
 let map = null
 let markers = []
 
+const deviceData = ref([])
+
+onMounted(() => {
+  deviceData.value = JSON.parse(JSON.stringify(mockDeviceList))
+  nextTick(() => {
+    initMap()
+    
+    setTimeout(() => {
+      map?.invalidateSize()
+    }, 100)
+  })
+})
+
 const layers = reactive([
-  { key: 'all', name: '全部设备', color: '#1890ff', visible: true, count: deviceList.length },
-  { key: 'online', name: '在线设备', color: '#52c41a', visible: true, count: deviceList.filter(d => d.status === 'online').length },
-  { key: 'offline', name: '离线设备', color: '#f5222d', visible: true, count: deviceList.filter(d => d.status === 'offline').length },
-  { key: 'warning', name: '异常设备', color: '#faad14', visible: true, count: deviceList.filter(d => d.status === 'warning').length }
+  { key: 'all', name: '全部设备', color: '#1890ff', visible: true },
+  { key: 'online', name: '在线设备', color: '#52c41a', visible: true },
+  { key: 'offline', name: '离线设备', color: '#f5222d', visible: true },
+  { key: 'warning', name: '异常设备', color: '#faad14', visible: true }
 ])
 
-const onlineCount = computed(() => deviceList.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => deviceList.filter(d => d.status === 'offline').length)
-const warningCount = computed(() => deviceList.filter(d => d.status === 'warning').length)
+const onlineCount = computed(() => deviceData.value.filter(d => d.status === 'online').length)
+const offlineCount = computed(() => deviceData.value.filter(d => d.status === 'offline').length)
+const warningCount = computed(() => deviceData.value.filter(d => d.status === 'warning').length)
+
+const getOrgLabels = () => {
+  const labels = []
+  const traverse = (nodes) => {
+    for (const node of nodes) {
+      if (selectedOrgIds.value.includes(node.id)) {
+        labels.push(node.label.replace('综治中心', ''))
+      }
+      if (node.children) {
+        traverse(node.children)
+      }
+    }
+  }
+  traverse(orgData)
+  return labels
+}
 
 const filteredDevices = computed(() => {
-  if (!searchText.value) return deviceList
-  return deviceList.filter(d => 
-    d.name.includes(searchText.value) || d.org.includes(searchText.value)
-  )
+  let result = [...deviceData.value]
+
+  if (selectedOrgIds.value.length > 0) {
+    const orgLabels = getOrgLabels()
+    result = result.filter(d => {
+      return orgLabels.some(label => d.org.includes(label))
+    })
+  }
+
+  if (searchText.value) {
+    result = result.filter(d => 
+      d.name.includes(searchText.value) || d.org.includes(searchText.value)
+    )
+  }
+
+  const allVisible = layers.find(l => l.key === 'all')?.visible
+  const onlineVisible = layers.find(l => l.key === 'online')?.visible
+  const offlineVisible = layers.find(l => l.key === 'offline')?.visible
+  const warningVisible = layers.find(l => l.key === 'warning')?.visible
+
+  if (!allVisible) {
+    const allowedStatuses = []
+    if (onlineVisible) allowedStatuses.push('online')
+    if (offlineVisible) allowedStatuses.push('offline')
+    if (warningVisible) allowedStatuses.push('warning')
+    if (allowedStatuses.length === 0) {
+      result = []
+    } else {
+      result = result.filter(d => allowedStatuses.includes(d.status))
+    }
+  }
+
+  return result
 })
+
+const visibleDeviceCount = computed(() => ({
+  all: deviceData.value.length,
+  online: deviceData.value.filter(d => d.status === 'online').length,
+  offline: deviceData.value.filter(d => d.status === 'offline').length,
+  warning: deviceData.value.filter(d => d.status === 'warning').length
+}))
 
 const getVideoThumb = (item) => {
   return `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180' viewBox='0 0 320 180'%3E%3Crect fill='%230b1e3f' width='320' height='180'/%3E%3Ctext fill='white' font-size='14' font-family='Arial' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3E${encodeURIComponent(item.name)}%3C/text%3E%3C/svg%3E`
@@ -264,10 +332,12 @@ const updateTileLayer = () => {
 }
 
 const addDeviceMarkers = () => {
+  if (!map) return
+  
   markers.forEach(m => map.removeLayer(m))
   markers = []
   
-  deviceList.forEach(device => {
+  filteredDevices.value.forEach(device => {
     const iconColor = device.status === 'online' ? '#52c41a' : device.status === 'offline' ? '#f5222d' : '#faad14'
     const icon = L.divIcon({
       className: 'device-marker',
@@ -309,11 +379,36 @@ const addDeviceMarkers = () => {
 }
 
 const toggleLayer = (layer) => {
-  ElMessage.info(`${layer.name}：${layer.visible ? '显示' : '隐藏'}`)
+  if (layer.key === 'all') {
+    layers.forEach(l => {
+      l.visible = layer.visible
+    })
+  } else {
+    const allLayer = layers.find(l => l.key === 'all')
+    if (allLayer && !layer.visible) {
+      allLayer.visible = false
+    }
+  }
+  
+  if (map) {
+    addDeviceMarkers()
+  }
+  
+  ElMessage.info(`${layer.name}：${layer.visible ? '显示' : '隐藏'}，当前地图和列表已同步更新`)
 }
 
-const handleOrgCheck = () => {
-  ElMessage.info('筛选组织')
+const handleOrgCheck = (_, info) => {
+  selectedOrgIds.value = info.checkedKeys.filter(k => typeof k === 'string')
+  
+  if (map) {
+    addDeviceMarkers()
+  }
+  
+  if (selectedOrgIds.value.length > 0) {
+    ElMessage.info(`已筛选 ${selectedOrgIds.value.length} 个组织，地图和列表已同步更新`)
+  } else {
+    ElMessage.info('已清除组织筛选，显示全部设备')
+  }
 }
 
 const selectDevice = (device) => {

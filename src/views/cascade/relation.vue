@@ -156,7 +156,7 @@
       </div>
     </div>
     
-    <el-dialog v-model="showAddDialog" title="级联关系配置" width="600px">
+    <el-dialog v-model="showAddDialog" :title="editingCascadeId ? '编辑级联关系' : '新增级联关系'" width="600px" @close="resetCascadeForm">
       <el-form :model="cascadeForm" label-width="100px">
         <el-form-item label="源组织">
           <el-input :value="selectedNode?.label" disabled />
@@ -193,7 +193,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
+        <el-button @click="showAddDialog = false; resetCascadeForm()">取消</el-button>
         <el-button type="primary" @click="handleSaveCascade">保存</el-button>
       </template>
     </el-dialog>
@@ -210,6 +210,16 @@ const selectedNode = ref(null)
 const parentNode = ref(null)
 const showAddDialog = ref(false)
 const treeRef = ref(null)
+const editingCascadeId = ref(null)
+
+const targetOrgMap = {
+  '1-1': { name: '东城区综治中心', level: 'district' },
+  '1-2': { name: '西城区综治中心', level: 'district' },
+  '1-3': { name: '南城区综治中心', level: 'district' },
+  '1-4': { name: '北城区综治中心', level: 'district' },
+  '2-1': { name: '市公安局', level: 'unit' },
+  '2-2': { name: '市消防支队', level: 'unit' }
+}
 
 const cascadeForm = reactive({
   targetId: '',
@@ -220,12 +230,12 @@ const cascadeForm = reactive({
 })
 
 const cascadeList = ref([
-  { id: 1, targetName: '东城区综治中心', targetLevel: 'district', direction: 'down', status: 'active', createTime: '2024-01-01 10:00:00' },
-  { id: 2, targetName: '西城区综治中心', targetLevel: 'district', direction: 'down', status: 'active', createTime: '2024-01-01 10:05:00' },
-  { id: 3, targetName: '南城区综治中心', targetLevel: 'district', direction: 'down', status: 'active', createTime: '2024-01-01 10:10:00' },
-  { id: 4, targetName: '北城区综治中心', targetLevel: 'district', direction: 'down', status: 'active', createTime: '2024-01-01 10:15:00' },
-  { id: 5, targetName: '市公安局', targetLevel: 'unit', direction: 'down', status: 'active', createTime: '2024-01-02 09:00:00' },
-  { id: 6, targetName: '市消防支队', targetLevel: 'unit', direction: 'down', status: 'active', createTime: '2024-01-02 09:30:00' }
+  { id: 1, targetId: '1-1', targetName: '东城区综治中心', targetLevel: 'district', direction: 'down', permissions: ['view', 'playback'], status: 'active', createTime: '2024-01-01 10:00:00' },
+  { id: 2, targetId: '1-2', targetName: '西城区综治中心', targetLevel: 'district', direction: 'down', permissions: ['view', 'playback', 'control'], status: 'active', createTime: '2024-01-01 10:05:00' },
+  { id: 3, targetId: '1-3', targetName: '南城区综治中心', targetLevel: 'district', direction: 'down', permissions: ['view'], status: 'active', createTime: '2024-01-01 10:10:00' },
+  { id: 4, targetId: '1-4', targetName: '北城区综治中心', targetLevel: 'district', direction: 'down', permissions: ['view', 'playback', 'wall'], status: 'active', createTime: '2024-01-01 10:15:00' },
+  { id: 5, targetId: '2-1', targetName: '市公安局', targetLevel: 'unit', direction: 'down', permissions: ['view', 'playback', 'control', 'wall'], status: 'active', createTime: '2024-01-02 09:00:00' },
+  { id: 6, targetId: '2-2', targetName: '市消防支队', targetLevel: 'unit', direction: 'down', permissions: ['view', 'control'], status: 'active', createTime: '2024-01-02 09:30:00' }
 ])
 
 const childCount = computed(() => {
@@ -301,10 +311,22 @@ const handleSync = () => {
   ElMessage.success('级联配置同步中...')
 }
 
+const resetCascadeForm = () => {
+  cascadeForm.targetId = ''
+  cascadeForm.direction = 'down'
+  cascadeForm.permissions = ['view', 'playback']
+  cascadeForm.status = true
+  cascadeForm.remark = ''
+  editingCascadeId.value = null
+}
+
 const handleEditCascade = (row) => {
-  cascadeForm.targetId = row.id
+  editingCascadeId.value = row.id
+  cascadeForm.targetId = row.targetId
   cascadeForm.direction = row.direction
+  cascadeForm.permissions = [...(row.permissions || ['view', 'playback'])]
   cascadeForm.status = row.status === 'active'
+  cascadeForm.remark = row.remark || ''
   showAddDialog.value = true
 }
 
@@ -314,17 +336,63 @@ const handleToggleStatus = (row) => {
 }
 
 const handleDeleteCascade = (row) => {
-  ElMessageBox.confirm(`确定要删除与 "${row.targetName}" 的级联关系吗？`, '提示', {
+  ElMessageBox.confirm(`确定要删除与 "${row.targetName}" 的级联关系吗？删除后列表将同步更新。`, '提示', {
     type: 'warning'
   }).then(() => {
     cascadeList.value = cascadeList.value.filter(item => item.id !== row.id)
-    ElMessage.success('删除成功')
+    ElMessage.success(`已删除与 "${row.targetName}" 的级联关系`)
   }).catch(() => {})
 }
 
 const handleSaveCascade = () => {
-  ElMessage.success('级联配置保存成功')
+  if (!cascadeForm.targetId) {
+    ElMessage.warning('请选择目标组织')
+    return
+  }
+  
+  const targetInfo = targetOrgMap[cascadeForm.targetId]
+  if (!targetInfo) {
+    ElMessage.warning('无效的目标组织')
+    return
+  }
+
+  const now = new Date()
+  const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+
+  if (editingCascadeId.value) {
+    const idx = cascadeList.value.findIndex(item => item.id === editingCascadeId.value)
+    if (idx !== -1) {
+      cascadeList.value[idx] = {
+        ...cascadeList.value[idx],
+        targetId: cascadeForm.targetId,
+        targetName: targetInfo.name,
+        targetLevel: targetInfo.level,
+        direction: cascadeForm.direction,
+        permissions: [...cascadeForm.permissions],
+        status: cascadeForm.status ? 'active' : 'inactive',
+        remark: cascadeForm.remark,
+        updateTime: timeStr
+      }
+      ElMessage.success(`已更新与 "${targetInfo.name}" 的级联配置`)
+    }
+  } else {
+    const maxId = cascadeList.value.length > 0 ? Math.max(...cascadeList.value.map(i => i.id)) : 0
+    cascadeList.value.unshift({
+      id: maxId + 1,
+      targetId: cascadeForm.targetId,
+      targetName: targetInfo.name,
+      targetLevel: targetInfo.level,
+      direction: cascadeForm.direction,
+      permissions: [...cascadeForm.permissions],
+      status: cascadeForm.status ? 'active' : 'inactive',
+      remark: cascadeForm.remark,
+      createTime: timeStr
+    })
+    ElMessage.success(`已新增与 "${targetInfo.name}" 的级联配置`)
+  }
+
   showAddDialog.value = false
+  resetCascadeForm()
 }
 </script>
 

@@ -115,7 +115,7 @@
       </div>
     </el-card>
     
-    <el-dialog v-model="showAddDialog" title="新增设备" width="600px" @close="handleDialogClose">
+    <el-dialog v-model="showAddDialog" :title="editingId ? '编辑设备' : '新增设备'" width="600px" @close="handleDialogClose">
       <el-form :model="deviceForm" :rules="formRules" ref="deviceFormRef" label-width="100px">
         <el-row :gutter="20">
           <el-col :span="12">
@@ -258,10 +258,17 @@
 </template>
 
 <script setup>
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { VideoPlay, VideoPause, FullScreen } from '@element-plus/icons-vue'
-import { deviceList } from '@/mock/data'
+import { deviceList as mockDeviceList } from '@/mock/data'
+
+const deviceData = ref([])
+const editingId = ref(null)
+
+onMounted(() => {
+  deviceData.value = JSON.parse(JSON.stringify(mockDeviceList))
+})
 
 const filterForm = reactive({
   name: '',
@@ -302,7 +309,7 @@ const formRules = {
 }
 
 const filteredData = computed(() => {
-  return deviceList.filter(item => {
+  return deviceData.value.filter(item => {
     if (filterForm.name && !item.name.includes(filterForm.name)) return false
     if (filterForm.org && !item.org.includes(filterForm.org)) return false
     if (filterForm.status && item.status !== filterForm.status) return false
@@ -312,9 +319,9 @@ const filteredData = computed(() => {
 })
 
 const total = computed(() => filteredData.value.length)
-const onlineCount = computed(() => deviceList.filter(d => d.status === 'online').length)
-const offlineCount = computed(() => deviceList.filter(d => d.status === 'offline').length)
-const warningCount = computed(() => deviceList.filter(d => d.status === 'warning').length)
+const onlineCount = computed(() => deviceData.value.filter(d => d.status === 'online').length)
+const offlineCount = computed(() => deviceData.value.filter(d => d.status === 'offline').length)
+const warningCount = computed(() => deviceData.value.filter(d => d.status === 'warning').length)
 
 const tableData = computed(() => {
   const start = (pagination.page - 1) * pagination.pageSize
@@ -350,15 +357,31 @@ const handlePreview = (row) => {
 }
 
 const handleEdit = (row) => {
-  Object.assign(deviceForm, row)
+  editingId.value = row.id
+  Object.assign(deviceForm, {
+    id: row.id,
+    name: row.name,
+    org: row.org,
+    type: row.type,
+    status: row.status,
+    ip: row.ip,
+    resolution: row.resolution,
+    brand: row.brand,
+    lng: String(row.lng || ''),
+    lat: String(row.lat || '')
+  })
   showAddDialog.value = true
 }
 
 const handleDelete = (row) => {
-  ElMessageBox.confirm(`确定要删除设备 "${row.name}" 吗？`, '提示', {
+  ElMessageBox.confirm(`确定要删除设备 "${row.name}" 吗？删除后列表和统计将同步更新。`, '提示', {
     type: 'warning'
   }).then(() => {
-    ElMessage.success('删除成功')
+    const index = deviceData.value.findIndex(d => d.id === row.id)
+    if (index > -1) {
+      deviceData.value.splice(index, 1)
+      ElMessage.success(`设备 "${row.name}" 删除成功`)
+    }
   }).catch(() => {})
 }
 
@@ -368,13 +391,53 @@ const handleViewDetail = (row) => {
 
 const handleDialogClose = () => {
   deviceFormRef.value?.resetFields()
+  editingId.value = null
+  Object.assign(deviceForm, {
+    id: '',
+    name: '',
+    org: '',
+    type: '',
+    status: 'online',
+    ip: '',
+    resolution: '1080P',
+    brand: '',
+    lng: '',
+    lat: ''
+  })
 }
 
 const handleSubmit = () => {
   deviceFormRef.value?.validate((valid) => {
     if (valid) {
-      ElMessage.success('保存成功')
+      if (editingId.value) {
+        const index = deviceData.value.findIndex(d => d.id === editingId.value)
+        if (index > -1) {
+          deviceData.value[index] = {
+            ...deviceData.value[index],
+            ...deviceForm,
+            lng: parseFloat(deviceForm.lng) || deviceData.value[index].lng,
+            lat: parseFloat(deviceForm.lat) || deviceData.value[index].lat
+          }
+          ElMessage.success(`设备 "${deviceForm.name}" 修改成功`)
+        }
+      } else {
+        const newDevice = {
+          id: deviceForm.id,
+          name: deviceForm.name,
+          org: deviceForm.org,
+          type: deviceForm.type,
+          status: deviceForm.status,
+          ip: deviceForm.ip,
+          resolution: deviceForm.resolution,
+          brand: deviceForm.brand,
+          lng: parseFloat(deviceForm.lng) || 39.9042,
+          lat: parseFloat(deviceForm.lat) || 116.4074
+        }
+        deviceData.value.unshift(newDevice)
+        ElMessage.success(`设备 "${deviceForm.name}" 新增成功`)
+      }
       showAddDialog.value = false
+      handleDialogClose()
     }
   })
 }
